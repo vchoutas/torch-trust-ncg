@@ -22,7 +22,7 @@ python setup.py build develop
 
 To create the optimizer simply run:
 ```Python
-    optimizer = TrustRegionNewtonCG(parameter_list)
+    optimizer = TrustRegion(parameter_list)
 ```
 where paremeter_list is the list of parameters you wish to optimize. To perform
 one optimization step simply call the step function and pass a closure that
