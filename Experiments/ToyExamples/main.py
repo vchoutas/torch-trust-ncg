@@ -1,29 +1,18 @@
-# -*- coding: utf-8 -*-
-
-# @author Vasileios Choutas
-# Contact: vassilis.choutas@tuebingen.mpg.de
-
-import sys
-import argparse
 import torch
-import numpy as np
-
-from .utils import rosenbrock, branin
-from . import TrustRegionNewtonCG
+from Code.TrustRegion import TrustRegion
+from Utils.utils import rosenbrock, branin
 
 if __name__ == "__main__":
+    import sys
+    import argparse
+
     parser = argparse.ArgumentParser()
-    parser.add_argument('--function', type=str, default='rosenbrock',
-                        choices=['rosenbrock', 'branin'],
-                        help='Test function to optimize'
-                        )
-    parser.add_argument('--num-iters', dest='num_iters', default=100,
-                        type=str,
+    parser.add_argument('--function', type=str, default='rosenbrock', choices=['rosenbrock', 'branin'],
+                        help='Test function to optimize')
+    parser.add_argument('--num-iters', dest='num_iters', default=200, type=str,
                         help='Number of iterations to use')
-    parser.add_argument('--gtol', default=1e-4, type=float,
-                        help='Gradient tolerance')
-    parser.add_argument('--init-point', nargs=2, default=[2.5, 2.5],
-                        type=float, dest='init_point',
+    parser.add_argument('--gtol', default=1e-4, type=float, help='Gradient tolerance')
+    parser.add_argument('--init-point', nargs=2, default=[2.5, 2.5], type=float, dest='init_point',
                         help='Point to initialize the optimization')
 
     args = parser.parse_args()
@@ -45,7 +34,8 @@ if __name__ == "__main__":
         variable[0, 0] = init_point[0]
         variable[0, 1] = init_point[1]
 
-    optimizer = TrustRegionNewtonCG([variable])
+    optimizer = TrustRegion([variable], opt_method='krylov')
+
 
     def closure(backward=True):
         if backward:
@@ -54,6 +44,7 @@ if __name__ == "__main__":
         if backward:
             loss.backward(create_graph=True)
         return loss
+
 
     for n in range(num_iters):
         loss = optimizer.step(closure)
