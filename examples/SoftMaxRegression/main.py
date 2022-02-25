@@ -7,9 +7,17 @@ import matplotlib.pyplot as plt
 import torchvision.datasets as dsets
 import torchvision.transforms as transforms
 
-from Experiments.SoftMaxRegression.SoftMaxRegression import SoftMaxRegression
+from torchtrustncg import TrustRegion
 
-from Code.TrustRegion import TrustRegion
+
+class SoftMaxRegression(torch.nn.Module):
+    def __init__(self, input_dim, output_dim):
+        super(SoftMaxRegression, self).__init__()
+        self.linear = torch.nn.Linear(input_dim, output_dim, bias=True)
+
+    def forward(self, x):
+        outputs = self.linear(x)
+        return outputs
 
 
 def acc(model, data_loader, device):
@@ -43,18 +51,21 @@ def main():
     #  USE GPU FOR MODEL  #
     #######################
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    device = 'cpu'  ######### Fixed in this case
+    device = 'cpu'  # Fixed in this case
     # print('Device to run: {}'.format(device))
 
     model = SoftMaxRegression(input_dim, output_dim)
     model.to(device)
 
-    criterion = torch.nn.CrossEntropyLoss()  # computes softmax and then the cross entropy
+    # computes softmax and then the cross entropy
+    criterion = torch.nn.CrossEntropyLoss()
 
     opt_method = 'krylov'
-    optimizer = TrustRegion(model.parameters(), max_trust_radius=1000, initial_trust_radius=.005,
-                            eta=0.15, kappa_easy=0.01, max_newton_iter=150, max_krylov_dim=150,
-                            lanczos_tol=1e-5, gtol=1e-05, hutchinson_approx=True, opt_method=opt_method)
+    optimizer = TrustRegion(
+        model.parameters(), max_trust_radius=1000, initial_trust_radius=.005,
+        eta=0.15, kappa_easy=0.01, max_newton_iter=150, max_krylov_dim=150,
+        lanczos_tol=1e-5, gtol=1e-05, hutchinson_approx=True,
+        opt_method=opt_method)
 
     tr_losses = []
     tr_accuracies, tst_accuracies = [], []
@@ -66,7 +77,8 @@ def main():
             running_loss = 0
             running_samples = 0
             for i, (samples, labels) in enumerate(train_loader):
-                samples = Variable(samples.view(-1, 28 * 28), requires_grad=False).to(device)
+                samples = Variable(samples.view(-1, 28 * 28),
+                                   requires_grad=False).to(device)
                 labels = Variable(labels, requires_grad=False).to(device)
 
                 def closure(backward=True):
@@ -132,10 +144,15 @@ if __name__ == "__main__":
     output_dim = 10
     lr_rate = 0.01
 
-    train_dataset = dsets.MNIST(root='../../Datasets', train=True, transform=transforms.ToTensor(), download=False)
-    test_dataset = dsets.MNIST(root='../../Datasets', train=False, transform=transforms.ToTensor())
+    train_dataset = dsets.MNIST(
+        root='../../Datasets', train=True, transform=transforms.ToTensor(),
+        download=True)
+    test_dataset = dsets.MNIST(
+        root='../../Datasets', train=False, transform=transforms.ToTensor())
 
-    train_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True)
-    test_loader = torch.utils.data.DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=False)
+    train_loader = torch.utils.data.DataLoader(
+        dataset=train_dataset, batch_size=batch_size, shuffle=True)
+    test_loader = torch.utils.data.DataLoader(
+        dataset=test_dataset, batch_size=batch_size, shuffle=False)
 
     main()

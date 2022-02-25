@@ -26,17 +26,20 @@ def eye_like(tensor, device):
 
 class TrustRegion(optim.Optimizer):
 
-    def __init__(self, params: List[Tensor],
-                 max_trust_radius: float = 1000,
-                 initial_trust_radius: float = 0.5,
-                 eta: float = 0.15,
-                 gtol: float = 1e-05,
-                 kappa_easy: float = 0.1,
-                 max_newton_iter: int = 50,
-                 max_krylov_dim: int = 15,
-                 lanczos_tol: float = 1e-4,
-                 opt_method='krylov',
-                 **kwargs) -> None:
+    def __init__(
+        self,
+        params: List[Tensor],
+        max_trust_radius: float = 1000,
+        initial_trust_radius: float = 0.5,
+        eta: float = 0.15,
+        gtol: float = 1e-05,
+        kappa_easy: float = 0.1,
+        max_newton_iter: int = 50,
+        max_krylov_dim: int = 15,
+        lanczos_tol: float = 1e-4,
+        opt_method: str = 'cg',
+        **kwargs
+    ) -> None:
         """ Trust Region
                 Newton Conjugate Gradient
                     Uses the Conjugate Gradient Algorithm to find the solution of the
@@ -86,8 +89,10 @@ class TrustRegion(optim.Optimizer):
         self.max_newton_iter = max_newton_iter
         self.kwargs = kwargs
 
-        self.T_lambda = lambda _lambda, T_x, device: T_x.to(device) + _lambda * eye_like(T_x, device)
-        self.lambda_const = lambda lambda_k: (1 + lambda_k) * torch.sqrt(torch.tensor(torch.finfo(torch.float32).eps))
+        self.T_lambda = lambda _lambda, T_x, device: T_x.to(
+            device) + _lambda * eye_like(T_x, device)
+        self.lambda_const = lambda lambda_k: (
+            1 + lambda_k) * torch.sqrt(torch.tensor(torch.finfo(torch.float32).eps))
 
         if not (opt_method == 'cg' or opt_method == 'krylov'):
             raise ValueError('opt_method should be "cg" or "krylov"')
@@ -352,18 +357,21 @@ class TrustRegion(optim.Optimizer):
         lambda_k, lambda_n, u_n = self._lambda_one_plus(T_x, device)
         lambda_const = self.lambda_const(lambda_k).to(device=device)
         if lambda_k == 0:  # T_x is positive definite
-            _lambda = torch.tensor([0], dtype=torch.float32, device=device)  # + lambda_const
+            _lambda = torch.tensor(
+                [0], dtype=torch.float32, device=device)  # + lambda_const
         else:
             _lambda = lambda_k + lambda_const
 
-        s, L = self._compute_s(_lambda=_lambda, lambda_const=lambda_const, lanczos_g=lanczos_g, T_x=T_x, device=device)
+        s, L = self._compute_s(_lambda=_lambda, lambda_const=lambda_const,
+                               lanczos_g=lanczos_g, T_x=T_x, device=device)
 
         if norm(s) <= trust_radius:
 
             if _lambda == 0 or norm(s) == trust_radius:
                 return s
             else:
-                ta, tb = self.calc_boundaries(iterate=s, direction=u_n, trust_radius=trust_radius)
+                ta, tb = self.calc_boundaries(
+                    iterate=s, direction=u_n, trust_radius=trust_radius)
                 pa = s + ta * u_n
                 pb = s + tb * u_n
 
@@ -380,10 +388,12 @@ class TrustRegion(optim.Optimizer):
             if self._converged(s, trust_radius) or norm(s) < torch.finfo(float).eps:
                 break
 
-            w = torch.triangular_solve(s, L.T.to(device=device), upper=False).solution
+            w = torch.triangular_solve(
+                s, L.T.to(device=device), upper=False).solution
             _lambda = self._nu_next(_lambda, trust_radius, s, w)
 
-            s, L = self._compute_s(_lambda, lambda_const, lanczos_g, T_x, device)
+            s, L = self._compute_s(_lambda, lambda_const,
+                                   lanczos_g, T_x, device)
 
             n_iter_nu += 1
             if n_iter_nu > self.max_newton_iter - 1:  # self.max_krylov_dim:
@@ -413,9 +423,11 @@ class TrustRegion(optim.Optimizer):
             print('Recursion')
             lambda_const *= 2
             # RecursionError: maximum recursion depth exceeded while calling a Python object
-            s, L = self._compute_s(_lambda + lambda_const, lambda_const, lanczos_g, T_x, device)
+            s, L = self._compute_s(
+                _lambda + lambda_const, lambda_const, lanczos_g, T_x, device)
 
-        s = torch.cholesky_solve(-lanczos_g[:, None], L.to(device=device), upper=True)
+        s = torch.cholesky_solve(-lanczos_g[:, None],
+                                 L.to(device=device), upper=True)
         return s, L
 
     @torch.no_grad()
@@ -453,7 +465,8 @@ class TrustRegion(optim.Optimizer):
                 T_x = torch.Tensor([diagonals])
                 alpha_prev = alpha
             else:
-                diagonals.append(1. / alpha.item() + beta.item() / alpha_prev.item())
+                diagonals.append(1. / alpha.item() +
+                                 beta.item() / alpha_prev.item())
                 sigma = - torch.sign(alpha_prev) * sigma
                 Q.append(sigma * q / norm(q))
                 T_x = (torch.diag(torch.tensor(diagonals, dtype=torch.float32), 0)
@@ -468,7 +481,8 @@ class TrustRegion(optim.Optimizer):
                 h = h + alpha * p
             else:
                 # Lanczos Step 2: solve problem in subspace
-                e_1 = torch.eye(1, krylov_dim + 1, device=flat_grad.device).flatten()
+                e_1 = torch.eye(1, krylov_dim + 1,
+                                device=flat_grad.device).flatten()
                 lanczos_g = gamma0 * e_1
                 s = self._root_finder(trust_radius=trust_radius,
                                       T_x=T_x, lanczos_g=lanczos_g,
@@ -484,7 +498,8 @@ class TrustRegion(optim.Optimizer):
                 break
 
             if krylov_dim == n_features:
-                print(RuntimeWarning('Krylov dimensionality reach full space! Breaking out..'))
+                print(RuntimeWarning(
+                    'Krylov dimensionality reach full space! Breaking out..'))
                 break
                 # return h
 
@@ -519,9 +534,11 @@ class TrustRegion(optim.Optimizer):
         trust_radius = state['trust_radius']
 
         if self.opt_method == 'cg':
-            param_step, hit_boundary = self._solve_subproblem_cg(starting_loss, flat_grad, trust_radius)
+            param_step, hit_boundary = self._solve_subproblem_cg(
+                starting_loss, flat_grad, trust_radius)
         else:
-            param_step, hit_boundary = self._solve_subproblem_krylov(starting_loss, flat_grad, trust_radius)
+            param_step, hit_boundary = self._solve_subproblem_krylov(
+                starting_loss, flat_grad, trust_radius)
 
         self.param_step = param_step
 
@@ -548,4 +565,3 @@ class TrustRegion(optim.Optimizer):
 
         self.steps += 1
         return starting_loss
-
