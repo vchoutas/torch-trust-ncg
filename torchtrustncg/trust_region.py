@@ -15,6 +15,8 @@ from torch import norm
 import torch.optim as optim
 import torch.autograd as autograd
 
+from loguru import logger
+
 import math
 
 Tensor = NewType('Tensor', torch.Tensor)
@@ -38,6 +40,7 @@ class TrustRegion(optim.Optimizer):
         max_krylov_dim: int = 15,
         lanczos_tol: float = 1e-4,
         opt_method: str = 'cg',
+        epsilon: float = 1.0e-09,
         **kwargs
     ) -> None:
         """ Trust Region
@@ -88,6 +91,8 @@ class TrustRegion(optim.Optimizer):
         self.max_krylov_dim = max_krylov_dim
         self.max_newton_iter = max_newton_iter
         self.kwargs = kwargs
+
+        self.epsilon = epsilon
 
         self.T_lambda = lambda _lambda, T_x, device: T_x.to(
             device) + _lambda * eye_like(T_x, device)
@@ -388,8 +393,10 @@ class TrustRegion(optim.Optimizer):
             if self._converged(s, trust_radius) or norm(s) < torch.finfo(float).eps:
                 break
 
-            w = torch.triangular_solve(
-                s, L.T.to(device=device), upper=False).solution
+            # w = torch.triangular_solve(
+            #     s, L.T.to(device=device), upper=False).solution
+            w = torch.linalg.solve_triangular(
+                L.T.to(device=device), s, upper=False)
             _lambda = self._nu_next(_lambda, trust_radius, s, w)
 
             s, L = self._compute_s(_lambda, lambda_const,
@@ -420,7 +427,7 @@ class TrustRegion(optim.Optimizer):
         try:
             L = torch.linalg.cholesky(self.T_lambda(_lambda, T_x, device))
         except RuntimeError:
-            print('Recursion')
+            # print('Recursion')
             lambda_const *= 2
             # RecursionError: maximum recursion depth exceeded while calling a Python object
             s, L = self._compute_s(
@@ -452,26 +459,29 @@ class TrustRegion(optim.Optimizer):
 
         krylov_dim, sigma = 0, 1
 
+        device = flat_grad.device
+        targs = {'device': device, 'dtype': flat_grad.dtype}
+
         while True:
             Hp = self._compute_hessian_vector_product(flat_grad, p)
             ptHp = torch.sum(Hp * p)
             alpha = torch.norm(q) ** 2 / ptHp
-            if alpha == 0:
-                print('hard case')
+            # if alpha == 0:
+            #     print('hard case')
             if krylov_dim == 0:
-                diagonals.append(1. / alpha.item())
+                diagonals.append(1. / alpha.clamp_(min=self.epsilon).item())
                 off_diagonals.append(float('inf'))  # dummy value
                 Q.append(sigma * q / norm(q))
-                T_x = torch.Tensor([diagonals])
+                T_x = torch.tensor([diagonals], **targs)
                 alpha_prev = alpha
             else:
                 diagonals.append(1. / alpha.item() +
                                  beta.item() / alpha_prev.item())
                 sigma = - torch.sign(alpha_prev) * sigma
                 Q.append(sigma * q / norm(q))
-                T_x = (torch.diag(torch.tensor(diagonals, dtype=torch.float32), 0)
-                       + torch.diag(torch.tensor(off_diagonals[1:], dtype=torch.float32), -1)
-                       + torch.diag(torch.tensor(off_diagonals[1:], dtype=torch.float32), 1))
+                T_x = (torch.diag(torch.tensor(diagonals, **targs), 0)
+                       + torch.diag(torch.tensor(off_diagonals[1:], **targs), -1)
+                       + torch.diag(torch.tensor(off_diagonals[1:], **targs), 1))
                 alpha_prev = alpha
 
             if INTERIOR_FLAG and alpha < 0 or torch.norm(h + alpha * p) >= trust_radius:
@@ -498,13 +508,13 @@ class TrustRegion(optim.Optimizer):
                 break
 
             if krylov_dim == n_features:
-                print(RuntimeWarning(
-                    'Krylov dimensionality reach full space! Breaking out..'))
+                # print(RuntimeWarning(
+                #     'Krylov dimensionality reach full space! Breaking out..'))
                 break
                 # return h
 
             if krylov_dim > self.max_krylov_dim:
-                print(RuntimeWarning('Max Krylov dimension reached! Breaking out..'))
+                # print(RuntimeWarning('Max Krylov dimension reached! Breaking out..'))
                 break
 
             beta = torch.dot(q_next, q_next) / torch.dot(q, q)
